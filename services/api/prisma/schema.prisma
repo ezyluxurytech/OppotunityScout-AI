@@ -1,0 +1,316 @@
+// OpportunityScout AI - Prisma Schema (SQLite for local dev)
+// NOTE: Enums and String[] are replaced with String and Json for SQLite compatibility.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// User & Profiles
+// ─────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("OPPORTUNITY_OWNER")
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownerProfile         OpportunityOwnerProfile?
+  investorProfile      InvestorProfile?
+  scoutProfile         ScoutProfile?
+  adminProfile         AdminProfile?
+  opportunities        Opportunity[]            @relation("OpportunityOwner")
+  scoutedOpportunities Opportunity[]            @relation("OpportunityScout")
+  savedOpportunities   SavedOpportunity[]
+  sentConnections      ConnectionRequest[]      @relation("InvestorConnections")
+  receivedConnections  ConnectionRequest[]      @relation("OwnerConnections")
+  progressUpdates      ProgressUpdate[]
+  auditLogs            AuditLog[]
+  refreshTokens        RefreshToken[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model OpportunityOwnerProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  displayName       String?
+  location          String?
+  bio               String?
+  contactInfo       String?
+  contactVisibility String   @default("PRIVATE")
+  areasOfInterest   String?
+  organizationName  String?
+  profileImageUrl   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InvestorProfile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  organizationName String?
+  investorType     String?
+  description      String?
+  location         String?
+  profileImageUrl  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferences InvestorPreference?
+}
+
+model ScoutProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  bio         String?
+  location    String?
+  expertise   String?
+  contactInfo String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AdminProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  permissions String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────
+// Opportunities
+// ─────────────────────────────────────────────
+
+model Opportunity {
+  id              String   @id @default(cuid())
+  ownerId         String
+  scoutId         String?
+  title           String
+  type            String
+  summary         String?
+  description     String
+  sector          String?
+  location        String?
+  stage           String?
+  problem         String?
+  solution        String?
+  goals           String?
+  supportRequired String?
+  useOfFunds      String?
+  evidence        String?
+  supportingLinks String?
+  status          String   @default("DRAFT")
+  reviewFeedback  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  submittedAt     DateTime?
+  publishedAt     DateTime?
+
+  owner             User                  @relation("OpportunityOwner", fields: [ownerId], references: [id])
+  scout             User?                 @relation("OpportunityScout", fields: [scoutId], references: [id])
+  analysis          OpportunityAnalysis[]
+  savedBy           SavedOpportunity[]
+  connectionRequests ConnectionRequest[]
+  progressUpdates   ProgressUpdate[]
+  matches           OpportunityMatch[]
+  statusHistory     OpportunityStatusHistory[]
+
+  @@index([status])
+  @@index([type])
+  @@index([sector])
+  @@index([location])
+  @@index([stage])
+  @@index([ownerId])
+  @@index([createdAt])
+}
+
+model OpportunityStatusHistory {
+  id            String   @id @default(cuid())
+  opportunityId String
+  status        String
+  actorId       String?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+}
+
+// ─────────────────────────────────────────────
+// AI Analysis
+// ─────────────────────────────────────────────
+
+model OpportunityAnalysis {
+  id                 String   @id @default(cuid())
+  opportunityId      String
+  inputVersion       String?
+  summary            String?
+  categories         String?
+  missingInformation String?
+  suggestedQuestions String?
+  disclaimer         String?
+  status             String   @default("PENDING")
+  modelIdentifier    String?
+  errorMessage       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────
+// Investor Preferences & Matching
+// ─────────────────────────────────────────────
+
+model InvestorPreference {
+  id               String   @id @default(cuid())
+  investorId       String   @unique
+  sectors          String?
+  opportunityTypes String?
+  locations        String?
+  stages           String?
+  criteria         String?
+  minInvestment    Float?
+  maxInvestment    Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  investor InvestorProfile @relation(fields: [investorId], references: [id], onDelete: Cascade)
+}
+
+model OpportunityMatch {
+  id              String   @id @default(cuid())
+  investorId      String
+  opportunityId   String
+  score           Float
+  relevanceBand   String?
+  matchedCriteria String?
+  explanation     String
+  generatedAt     DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([investorId])
+  @@index([opportunityId])
+  @@index([investorId, opportunityId])
+}
+
+// ─────────────────────────────────────────────
+// Saved Opportunities
+// ─────────────────────────────────────────────
+
+model SavedOpportunity {
+  id            String   @id @default(cuid())
+  investorId    String
+  opportunityId String
+  createdAt     DateTime @default(now())
+
+  investor    User        @relation(fields: [investorId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([investorId, opportunityId])
+  @@index([investorId])
+}
+
+// ─────────────────────────────────────────────
+// Connection Requests
+// ─────────────────────────────────────────────
+
+model ConnectionRequest {
+  id            String   @id @default(cuid())
+  investorId    String
+  opportunityId String
+  ownerId       String
+  message       String?
+  status        String   @default("PENDING")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  investor    User        @relation("InvestorConnections", fields: [investorId], references: [id])
+  owner       User        @relation("OwnerConnections", fields: [ownerId], references: [id])
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id])
+  progressUpdates ProgressUpdate[]
+
+  @@index([investorId])
+  @@index([ownerId])
+  @@index([opportunityId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────
+// Progress Tracking
+// ─────────────────────────────────────────────
+
+model ProgressUpdate {
+  id                  String   @id @default(cuid())
+  opportunityId       String
+  connectionRequestId String?
+  actorId             String
+  stage               String
+  note                String?
+  createdAt           DateTime @default(now())
+
+  opportunity        Opportunity        @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  connectionRequest  ConnectionRequest? @relation(fields: [connectionRequestId], references: [id])
+  actor              User               @relation(fields: [actorId], references: [id])
+
+  @@index([opportunityId])
+  @@index([actorId])
+}
+
+// ─────────────────────────────────────────────
+// Audit Logs
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+}
